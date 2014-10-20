@@ -8,7 +8,7 @@
  * @copyright	(c) 2008-2010 Kohana Team
  * @license		http://kohanaphp.com/license.html
  */
-abstract class Captcha
+class Captcha
 {
 	/**
 	 * @var object Captcha singleton
@@ -18,7 +18,17 @@ abstract class Captcha
 	/**
 	 * @var string Style-dependent Captcha driver
 	 */
-	protected $driver;
+	public  $group = 'default';
+        
+  /**
+	 * @var array  Captcha Image Style
+	 */
+	protected static $image_style = array('alpha', 'basic', 'black', 'word');
+        
+  /**
+	 * @var array  Captcha Image Style
+	 */
+	protected  $image_display = FALSE;
 
 	/**
 	 * @var array Default config values
@@ -26,6 +36,7 @@ abstract class Captcha
 	public static $config = array
 	(
 		'style'      	=> 'basic',
+		'image_type'    => 'png',
 		'width'      	=> 150,
 		'height'     	=> 50,
 		'complexity' 	=> 4,
@@ -48,7 +59,8 @@ abstract class Captcha
 	/**
 	 * @var string Image type ("png", "gif" or "jpeg")
 	 */
-	protected $image_type = 'png';
+	protected $image_type;
+        
 
 	/**
 	 * Singleton instance of Captcha.
@@ -89,40 +101,31 @@ abstract class Captcha
 		empty(Captcha::$instance) and Captcha::$instance = $this;
 
 		// No config group name given
-		if ( ! is_string($group))
+		if ( $group !== NULL)
 		{
-			$group = 'default';
+			$this->group = $group;
 		}
-
+                
 		// Load and validate config group
-		if ( ! is_array($config = Kohana::$config->load('captcha')->get($group)))
+		if ( ! is_array($config = Kohana::$config->load('captcha')->get($this->group)))
 			throw new Kohana_Exception('Captcha group not defined in :group configuration',
-					array(':group' => $group));
-
-		// All captcha config groups inherit default config group
-		if ($group !== 'default')
-		{
-			// Load and validate default config group
-			if ( ! is_array($default = Kohana::$config->load('captcha')->get('default')))
-				throw new Kohana_Exception('Captcha group not defined in :group configuration',
-					array(':group' => 'default'));
-
-			// Merge config group with default config group
-			$config += $default;
-		}
-
-		// Assign config values to the object
-		foreach ($config as $key => $value)
-		{
-			if (array_key_exists($key, Captcha::$config))
-			{
-				Captcha::$config[$key] = $value;
-			}
-		}
-
-		// Store the config group name as well, so the drivers can access it
-		Captcha::$config['group'] = $group;
-
+					array(':group' =>$this->group));
+                                        
+                 // Assign config values to the object
+                foreach ($config as $key => $value)
+                {
+                    if (array_key_exists($key, Captcha::$config))
+                    {
+                        Captcha::$config[$key] = $value;
+                    }
+                }
+                        
+                $this->image_type = Captcha::$config['image_type'];
+                
+                if (in_array(Captcha::$config['style'], Captcha::$image_style)) {
+                       $this->image_display = TRUE;
+                }
+                
 		// If using a background image, check if it exists
 		if ( ! empty($config['background']))
 		{
@@ -158,8 +161,17 @@ abstract class Captcha
 	public function update_response_session()
 	{
 		// Store the correct Captcha response in a session
-		Session::instance()->set('captcha_response', sha1(utf8::strtoupper($this->response)));
+		Session::instance()->set('captcha_response', sha1(UTF8::strtoupper($this->response)), 300);
 	}
+  
+  /**
+   * Check only once
+   */
+  public static function valid_once($response)
+  {
+		$result = (bool) (sha1(UTF8::strtoupper($response)) === Session::instance()->get_once('captcha_response'));
+    return $result;
+  }
 
 	/**
 	 * Validates user's Captcha response and updates response counter.
@@ -178,7 +190,7 @@ abstract class Captcha
 			return TRUE;
 
 		// Challenge result
-		$result = (bool) (sha1(utf8::strtoupper($response)) === Session::instance()->get('captcha_response'));
+		$result = (bool) (sha1(UTF8::strtoupper($response)) === Session::instance()->get('captcha_response'));
 
 		// Increment response counter
 		if ($counted !== TRUE)
@@ -427,26 +439,21 @@ abstract class Captcha
 	 * @param boolean $html Output as HTML
 	 * @return mixed HTML, string or void
 	 */
-	public function image_render($html)
+	public function image_render()
 	{
-		// Output html element
-		if ($html === TRUE)
-			return '<img src="'.url::site('captcha/'.Captcha::$config['group']).'" width="'.Captcha::$config['width'].'" height="'.Captcha::$config['height'].'" alt="Captcha" class="captcha" />';
-
-		// Send the correct HTTP header
-        Request::instance()->headers['Content-Type'] = 'image/'.$this->image_type;
-        Request::instance()->headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0';
-        Request::instance()->headers['Pragma'] = 'no-cache';
-        Request::instance()->headers['Connection'] = 'close';
-
 		// Pick the correct output function
 		$function = 'image'.$this->image_type;
+        
+                ob_start();
 		$function($this->image);
-
+                $image_data = ob_get_contents();
+                ob_end_clean();
+                
 		// Free up resources
 		imagedestroy($this->image);
+                return $image_data;
 	}
-
+        
 	/* DRIVER METHODS */
 
 	/**
@@ -454,14 +461,31 @@ abstract class Captcha
 	 *
 	 * @return string The challenge answer
 	 */
-	abstract public function generate_challenge();
+	public function generate_challenge() { }
 
 	/**
 	 * Output the Captcha challenge.
 	 *
-	 * @param boolean $html Render output as HTML
 	 * @return mixed
 	 */
-	abstract public function render($html = TRUE);
+	public function render() { }
+        
+        /**
+	 * Output the Captcha html challenge.
+	 *
+	 * @return string
+	 */
+	public function html_render()
+  {
+    if ($this->image_display == TRUE) {
+      return '<img src="'.(URL::site('captcha/'. $this->group)).'" width="'.Captcha::$config['width'].'" height="'.Captcha::$config['height'].'" alt="Captcha" class="captcha" onClick="this.src=this.src" />';
+    }
+    else {
+      $this->response = $this->generate_challenge();
+      $this->update_response_session();
+      return $this->render();
+    }
+  }
+        
 
 } // End Captcha Class

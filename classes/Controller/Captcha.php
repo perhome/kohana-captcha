@@ -16,11 +16,6 @@
 class Controller_Captcha extends Controller {
 
 	/**
-	 * @var boolean Auto render template
-	 **/
-	public $auto_render = FALSE;
-
-	/**
 	 * Output the captcha challenge
 	 *
 	 * @param string $group Config group name
@@ -30,7 +25,16 @@ class Controller_Captcha extends Controller {
 		// Output the Captcha challenge resource (no html)
 		// Pull the config group name from the URL
 		$group = $this->request->param('group', 'default');
-		Captcha::instance($group)->render(FALSE);
+    $data = Captcha::instance($group)->render();
+    
+    // Send the correct HTTP header
+    $this->response->headers('Content-Type', 'image/png');
+    $this->response->headers('Cache-Control', 
+      'no-store, no-cache, must-revalidate, post-check=0, pre-check=0');
+    $this->response->headers('Pragma', 'no-cache');
+    $this->response->headers('Connection', 'close');
+    
+    $this->response->body($data);
 	}
 	
 	public function after()

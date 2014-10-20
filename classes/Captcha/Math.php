@@ -56,7 +56,7 @@ class Captcha_Math extends Captcha
 	 * @param boolean $html HTML output
 	 * @return mixed
 	 */
-	public function render($html = TRUE)
+	public function render()
 	{
 		return $this->math_exercise;
 	}
